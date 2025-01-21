@@ -1,8 +1,10 @@
-import express, {Request, Response} from "express"
+import express, {Request, Response, Router} from "express"
 import axios from "axios"
+import serverless from "serverless-http";
 
 const app = express();
-const port = 3000;
+// const port = 3000;
+const router = Router()
 
 app.use(express.json());
 
@@ -34,7 +36,7 @@ const checkStock = (productId: number) => {
   return productId % 2 !== 0;
 }
 
-app.get('/products', async (req: Request, res: Response) => {
+router.get('/products', async (req: Request, res: Response) => {
   try {
     const products = await fetchProducts()
     res.json(products)
@@ -43,7 +45,7 @@ app.get('/products', async (req: Request, res: Response) => {
   }
 })
 
-app.post('/order', async (req: Request, res: Response) => {
+router.post('/order', async (req: Request, res: Response) => {
   const { productId, quantity } = req.body;
 
   if (typeof productId !== 'number' || typeof quantity !== 'number' || quantity <= 0) {
@@ -86,12 +88,16 @@ app.post('/order', async (req: Request, res: Response) => {
 })
 
 // Error handling middleware
-app.use((err: Error, req: Request, res: Response, next: any) => {
-  console.error(err.stack);
-  res.status(500).send("Something went wrong");
-})
+// app.use((err: Error, req: Request, res: Response, next: any) => {
+//   console.error(err.stack);
+//   res.status(500).send("Something went wrong");
+// })
+
+app.use("/api/", router);
+
+export const handler = serverless(app);
 
 // Start the server
-app.listen(port, ()=> {
-  console.log(`Server is running at http://localhost:${port}`);
-})
+// app.listen(port, ()=> {
+//   console.log(`Server is running at http://localhost:${port}`);
+// })
