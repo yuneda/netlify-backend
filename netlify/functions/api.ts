@@ -1,103 +1,60 @@
-import express, {Request, Response, Router} from "express"
-import axios from "axios"
-import serverless from "serverless-http";
+import { Handler } from '@netlify/functions'
+import { logAction } from "./utils/logger";
+import { getProducts } from "./services/productService";
+import { createOrder, getOrders } from "./services/orderService";
+import { checkStock } from './services/stockService';
 
-const app = express();
-// const port = 3000;
-const router = Router()
-
-app.use(express.json());
-
-interface Product {
-  id: number,
-  name: string,
-  price: number,
-  quantity: number
+// Mengatur CORS headers
+const headers = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
 }
 
-// this is mock database
-const orders: { [key: number]: Product[] } = {};
-
-const fetchProducts = async () => {
+// Handler utama untuk API
+const handler: Handler = async (event, context) => {
   try {
-    const response = await axios.get('https://jsonplaceholder.typicode.com/posts'); // Dummy API simulating products
-    return response.data.map((product: Product) => ({
-      id: product.id,
-      name: `Product ${product.id}`,
-      price: Math.random() * 100 + 10, // random price
-      availability: product.id %2 !== 0
-    }))
-  } catch (error) {
-    throw new Error("Failed to fetch product")
+
+    // Handle OPTIONS request untuk CORS
+    if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers }
+
+    const { path, httpMethod, body } = event;
+
+    // Route untuk mendapatkan daftar produk
+    if (path === '/api/products' && httpMethod === 'GET') {
+      const products = await getProducts()
+      return { statusCode: 200, headers, body: JSON.stringify({ products }) }
+    }
+
+    // Route untuk memeriksa stok produk
+    if (path.startsWith('/api/stock') && httpMethod === 'GET') {
+      const productId = path.split('/').pop();
+      if (!productId) throw new Error('Product ID is required');
+      const stockStatus = await checkStock(parseInt(productId, 10));
+      return { statusCode: 200, headers, body: JSON.stringify(stockStatus) };
+    }
+
+    // Route untuk membuat order
+    if (path === '/api/order' && httpMethod === 'POST') {
+      const order = await createOrder(JSON.parse(body || '{}'));
+      return { statusCode: 200, headers, body: JSON.stringify({ message: 'Order placed successfully', order }) };
+    }
+
+    // Route untuk mendapatkan daftar order
+    if (event.path === '/api/orders' && event.httpMethod === 'GET') {
+      const orders = getOrders()
+      return {
+        statusCode: 200, headers, body: JSON.stringify({ orders })
+      }
+    }
+
+    // Handle route tidak ditemukan
+    return { statusCode: 404, headers, body: JSON.stringify({ error: 'Route not found' }) }
+
+  } catch (error: any) {
+    logAction('Error', { message: error.message, path: event.path, method: event.httpMethod });
+    return { statusCode: 400, headers, body: JSON.stringify({ error: error.message }) };
   }
 }
 
-const checkStock = (productId: number) => {
-  return productId % 2 !== 0;
-}
-
-router.get('/products', async (req: Request, res: Response) => {
-  try {
-    const products = await fetchProducts()
-    res.json(products)
-  } catch (error) {
-    res.status(500).json({error: "Failed to fetch products"})
-  }
-})
-
-router.post('/order', async (req: Request, res: Response) => {
-  const { productId, quantity } = req.body;
-
-  if (typeof productId !== 'number' || typeof quantity !== 'number' || quantity <= 0) {
-    res.json({error: "Invalid input. Please provide a valid product ID and quantity."});
-    return;
-  }
-
-  try {
-    const products: Product[] = await fetchProducts();
-    const product = products.find(p => p.id === productId);
-
-    if (!product) {
-      res.status(404).json({error: "Product not found"});
-      return;
-    }
-
-    if (!checkStock(productId)) {
-      res.status(400).json({error: "Product is out of stock"});
-      return;
-    }
-
-    // create a new order entry in the mock database
-    const order: Product = {
-      id: productId,
-      name: product.name,
-      price: product.price,
-      quantity
-    }
-
-    if (!orders[productId]) {
-      orders[productId] = []
-    }
-
-    orders[productId].push(order);
-
-    res.json({ message: "Order placed succesfully", order})
-  } catch (error) {
-    res.status(500).json({error: "Error processing the order"})
-  }
-})
-
-// Error handling middleware
-// app.use((err: Error, req: Request, res: Response, next: any) => {
-//   console.error(err.stack);
-//   res.status(500).send("Something went wrong");
-// })
-
-app.use("/api/", router);
-
-export const handler = serverless(app);
-
-// Start the server
-// app.listen(port, ()=> {
-//   console.log(`Server is running at http://localhost:${port}`);
-// })
+export { handler }
